@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AuraVT - Pro Studio</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
+                    colors: { brand: { 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' } }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Three.js & MediaPipe -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #0b0f19; color: white; touch-action: none; }
+        
+        #renderCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; outline: none; }
+        
+        /* Modern Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .ui-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; }
+        .interactive { pointer-events: auto; }
+        
+        /* Custom Scrollbar for instructions */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        .hidden-transition { opacity: 0; pointer-events: none; transform: scale(0.95); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .show-transition { opacity: 1; pointer-events: auto; transform: scale(1); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body id="mainBody">
+
+    <!-- Video Feed (Hidden, Required for Processing) -->
+    <video class="input_video hidden" autoplay playsinline muted></video>
+
+    <!-- UI Overlay -->
+    <div class="ui-layer p-4 md:p-6 justify-between">
+        
+        <!-- Top Header -->
+        <header class="flex justify-between items-center interactive">
+            <div class="flex items-center gap-3 glass-panel px-4 py-2.5 rounded-2xl">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-400 to-purple-500 flex items-center justify-center font-bold text-sm shadow-lg shadow-brand-500/20">A</div>
+                <div>
+                    <h1 class="text-base font-bold tracking-tight leading-none">AuraVT</h1>
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <div id="statusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                        <span id="statusText" class="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">Ready to Start</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Button -->
+            <button id="infoBtn" class="glass-panel p-3 rounded-xl hover:bg-white/10 transition-colors" title="How to use">
+                <svg class="w-5 h-5 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </button>
+        </header>
+
+        <!-- Main Content Area (Sidebars & Modals) -->
+        <main class="flex-1 flex flex-col md:flex-row justify-between items-end md:items-center mt-4 mb-4 gap-4 relative">
+            
+            <!-- Left Controls Panel -->
+            <aside class="glass-panel p-5 rounded-2xl interactive w-full md:w-80 flex flex-col gap-5 shrink-0">
+                <div class="space-y-1">
+                    <h2 class="text-lg font-bold">Studio Controls</h2>
+                    <p class="text-xs text-slate-400">Manage your virtual presence</p>
+                </div>
+                
+                <button id="cameraBtn" class="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-3.5 rounded-xl font-bold shadow-lg shadow-brand-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    <span>Start Tracking</span>
+                </button>
+                
+                <div class="h-px bg-white/10 w-full"></div>
+                
+                <!-- Custom File Upload -->
+                <div class="flex flex-col gap-2">
+                    <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Avatar Texture</span>
+                    <label class="flex items-center justify-center gap-2 w-full bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-3 rounded-xl cursor-pointer transition-colors" id="uploadLabel">
+                        <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L28 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="text-sm font-medium text-slate-200" id="uploadText">Upload Face PNG</span>
+                        <input type="file" id="imageUpload" accept="image/*" class="hidden" disabled>
+                    </label>
+                </div>
+
+                <!-- Background Toggle -->
+                <div class="flex flex-col gap-2">
+                    <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Environment</span>
+                    <button id="bgBtn" class="flex items-center justify-center gap-2 w-full bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-3 rounded-xl transition-colors text-sm font-medium text-slate-200">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L28 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span>Chroma Key: Disabled</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Instructions Modal (Absolute centered) -->
+            <div id="infoModal" class="absolute inset-0 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 interactive hidden-transition z-50 flex items-center justify-center p-4">
+                <div class="glass-panel p-6 md:p-8 rounded-3xl w-full max-w-md shadow-2xl border border-white/20 bg-slate-900/90">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-400 to-purple-400">How to Use AuraVT</h2>
+                        <button id="closeInfoBtn" class="p-2 rounded-full hover:bg-white/10 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    
+                    <ul class="space-y-4 text-sm text-slate-300">
+                        <li class="flex gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold">1</span>
+                            <p>Click <strong>Start Tracking</strong> and allow camera access. The AI takes ~5 seconds to load.</p>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold">2</span>
+                            <p><strong>Step Back:</strong> Ensure your webcam can see your face, shoulders, and hands for full-body tracking.</p>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold">3</span>
+                            <p>Upload a custom <strong>Avatar Texture</strong> (like a smiley face or anime eyes) to map onto the 3D model.</p>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold">4</span>
+                            <p><strong>Streaming to OBS:</strong> Set Chroma Key to "Transparent". In OBS, add a Browser Source, paste this URL, and check <em>"Route audio via OBS"</em>.</p>
+                        </li>
+                    </ul>
+                    <button id="gotItBtn" class="w-full mt-8 bg-white text-slate-900 hover:bg-slate-200 px-4 py-3 rounded-xl font-bold transition-all active:scale-[0.98]">
+                        Let's Go!
+                    </button>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Bottom Record Bar -->
+        <footer class="flex justify-center md:justify-end interactive w-full shrink-0">
+            <div class="glass-panel p-2 rounded-2xl flex items-center gap-2 shadow-2xl border border-white/10 w-full md:w-auto overflow-hidden">
+                
+                <label class="flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-white/5 rounded-xl transition-colors">
+                    <input type="checkbox" id="audioToggle" class="w-4 h-4 text-rose-500 bg-slate-800 border-slate-600 rounded focus:ring-rose-500 focus:ring-2 focus:ring-offset-0">
+                    <span class="text-sm font-semibold text-slate-200 whitespace-nowrap">Mic</span>
+                </label>
+                
+                <div class="w-px h-8 bg-white/10"></div>
+                
+                <button id="recordBtn" class="flex-1 md:flex-none bg-rose-600 hover:bg-rose-500 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-rose-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <div id="recordDot" class="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]"></div>
+                    <span id="recordText">Record</span>
+                </button>
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- Core Logic Scripts -->
+    <script>
+        // ==========================================
+        // UI & STATE MANAGEMENT
+        // ==========================================
+        const UI = {
+            video: document.querySelector('.input_video'),
+            cameraBtn: document.getElementById('cameraBtn'),
+            bgBtn: document.getElementById('bgBtn'),
+            recordBtn: document.getElementById('recordBtn'),
+            audioToggle: document.getElementById('audioToggle'),
+            imageUpload: document.getElementById('imageUpload'),
+            uploadLabel: document.getElementById('uploadLabel'),
+            uploadText: document.getElementById('uploadText'),
+            statusText: document.getElementById('statusText'),
+            statusDot: document.getElementById('statusDot'),
+            infoBtn: document.getElementById('infoBtn'),
+            infoModal: document.getElementById('infoModal'),
+            closeInfoBtn: document.getElementById('closeInfoBtn'),
+            gotItBtn: document.getElementById('gotItBtn'),
+            body: document.getElementById('mainBody')
+        };
+
+        let State = { tracking: false, recording: false, bgMode: 0, mediaRecorder: null, chunks: [], audioStream: null };
+
+        function setStatus(msg, statusType = 'loading') {
+            UI.statusText.textContent = msg;
+            UI.statusDot.className = 'w-2 h-2 rounded-full ' + 
+                (statusType === 'loading' ? 'bg-amber-400 animate-pulse' : 
+                 statusType === 'active' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 
+                 'bg-slate-400');
+        }
+
+        // Modals
+        const toggleModal = (show) => {
+            if (show) {
+                UI.infoModal.classList.remove('hidden-transition', 'hidden');
+                UI.infoModal.classList.add('show-transition');
+            } else {
+                UI.infoModal.classList.remove('show-transition');
+                UI.infoModal.classList.add('hidden-transition');
+                setTimeout(() => UI.infoModal.classList.add('hidden'), 300);
+            }
+        };
+        
+        UI.infoBtn.onclick = () => toggleModal(true);
+        UI.closeInfoBtn.onclick = () => toggleModal(false);
+        UI.gotItBtn.onclick = () => toggleModal(false);
+
+        // Show info on first load automatically
+        setTimeout(() => toggleModal(true), 500);
+
+        // ==========================================
+        // THREE.JS ENGINE (Memory Optimized)
+        // ==========================================
+        const scene = new THREE.Scene();
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.domElement.id = 'renderCanvas';
+        document.body.insertBefore(renderer.domElement, document.querySelector('.ui-layer'));
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 18;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(5, 10, 15);
+        scene.add(dirLight);
+
+        // Avatar Construction
+        const avatarGroup = new THREE.Group();
+        scene.add(avatarGroup);
+
+        const defaultMat = new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 30 });
+        const highlightMat = new THREE.MeshPhongMaterial({ color: 0x3b82f6, shininess: 50 });
+
+        const headMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 3.2, 2.5), defaultMat);
+        const facePlane = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 3.0), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
+        facePlane.position.z = 1.26; 
+        headMesh.add(facePlane);
+        avatarGroup.add(headMesh);
+
+        const torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(5, 6, 2), defaultMat);
+        torsoMesh.position.y = -5;
+        avatarGroup.add(torsoMesh);
+
+        const handGeo = new THREE.SphereGeometry(0.8, 32, 32);
+        const leftHandMesh = new THREE.Mesh(handGeo, highlightMat);
+        const rightHandMesh = new THREE.Mesh(handGeo, highlightMat);
+        leftHandMesh.visible = false;
+        rightHandMesh.visible = false;
+        avatarGroup.add(leftHandMesh, rightHandMesh);
+
+        // Pre-allocate targets to prevent GC stutters
+        const initTargets = (mesh, yOff = 0) => {
+            mesh.userData.tPos = new THREE.Vector3(0, yOff, 0);
+            mesh.userData.tQuat = new THREE.Quaternion();
+        };
+        initTargets(headMesh); initTargets(torsoMesh, -5); initTargets(leftHandMesh); initTargets(rightHandMesh);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            headMesh.position.lerp(headMesh.userData.tPos, 0.2);
+            headMesh.quaternion.slerp(headMesh.userData.tQuat, 0.2);
+            torsoMesh.position.lerp(torsoMesh.userData.tPos, 0.15);
+            torsoMesh.quaternion.slerp(torsoMesh.userData.tQuat, 0.15);
+            leftHandMesh.position.lerp(leftHandMesh.userData.tPos, 0.3);
+            rightHandMesh.position.lerp(rightHandMesh.userData.tPos, 0.3);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==========================================
+        // TEXTURE UPLOAD
+        // ==========================================
+        UI.imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                UI.uploadText.textContent = file.name.substring(0, 15) + '...';
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    new THREE.TextureLoader().load(event.target.result, (texture) => {
+                        facePlane.material.map = texture;
+                        facePlane.material.color.setHex(0xffffff);
+                        facePlane.material.transparent = true;
+                        facePlane.material.needsUpdate = true;
+                    });
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // ==========================================
+        // MEDIAPIPE AI ENGINE
+        // ==========================================
+        const holistic = new Holistic({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`});
+        holistic.setOptions({ modelComplexity: 1, smoothLandmarks: true, refineFaceLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+        const tEuler = new THREE.Euler();
+        const tQuat = new THREE.Quaternion();
+
+        const updateWPos = (ref, lm, sX=25, sY=20, sZ=20) => ref.set((lm.x - 0.5) * sX, -(lm.y - 0.5) * sY, -lm.z * sZ);
+
+        holistic.onResults((results) => {
+            if (UI.statusText.textContent === 'Initializing AI...') setStatus('Tracking Active', 'active');
+
+            // Torso
+            if (results.poseLandmarks && results.poseLandmarks.length > 24) {
+                const ls = results.poseLandmarks[11], rs = results.poseLandmarks[12], hips = results.poseLandmarks[23]; 
+                updateWPos(torsoMesh.userData.tPos, { x: (ls.x + rs.x)/2, y: (ls.y + hips.y)/2, z: ls.z });
+                tEuler.set(0, 0, Math.atan2(rs.y - ls.y, rs.x - ls.x));
+                torsoMesh.userData.tQuat.copy(tQuat.setFromEuler(tEuler));
+            }
+
+            // Head
+            if (results.faceLandmarks) {
+                const nose = results.faceLandmarks[1];
+                updateWPos(headMesh.userData.tPos, nose);
+                const lF = results.faceLandmarks[234], rF = results.faceLandmarks[454], tF = results.faceLandmarks[10], bF = results.faceLandmarks[152];
+                tEuler.set(
+                    (nose.y - ((tF.y + bF.y) / 2)) * 2.5, 
+                    (nose.x - ((lF.x + rF.x) / 2)) * -2.5, 
+                    Math.atan2(rF.y - lF.y, rF.x - lF.x)
+                );
+                headMesh.userData.tQuat.copy(tQuat.setFromEuler(tEuler));
+            }
+
+            // Hands
+            leftHandMesh.visible = !!(results.leftHandLandmarks && updateWPos(leftHandMesh.userData.tPos, results.leftHandLandmarks[0]) || true);
+            rightHandMesh.visible = !!(results.rightHandLandmarks && updateWPos(rightHandMesh.userData.tPos, results.rightHandLandmarks[0]) || true);
+        });
+
+        const camUtils = new Camera(UI.video, { onFrame: async () => await holistic.send({image: UI.video}), width: 640, height: 480 });
+
+        UI.cameraBtn.onclick = () => {
+            if (!State.tracking) {
+                setStatus('Initializing AI...', 'loading');
+                camUtils.start().then(() => {
+                    State.tracking = true;
+                    UI.cameraBtn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg><span>Stop Tracking</span>`;
+                    UI.cameraBtn.classList.replace('bg-brand-600', 'bg-slate-700');
+                    UI.cameraBtn.classList.replace('hover:bg-brand-500', 'hover:bg-slate-600');
+                    UI.imageUpload.disabled = false;
+                    UI.uploadLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+                    UI.recordBtn.disabled = false;
+                });
+            } else {
+                camUtils.stop();
+                State.tracking = false;
+                setStatus('Tracking Stopped', 'inactive');
+                UI.cameraBtn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg><span>Start Tracking</span>`;
+                UI.cameraBtn.classList.replace('bg-slate-700', 'bg-brand-600');
+                UI.cameraBtn.classList.replace('hover:bg-slate-600', 'hover:bg-brand-500');
+                UI.imageUpload.disabled = true;
+                UI.recordBtn.disabled = true;
+            }
+        };
+
+        // ==========================================
+        // BACKGROUND CONTROLS
+        // ==========================================
+        UI.bgBtn.onclick = () => {
+            State.bgMode = (State.bgMode + 1) % 3;
+            if (State.bgMode === 0) {
+                UI.bgBtn.innerHTML = `<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016zM12 9v2m0 4h.01"></path></svg><span>Chroma Key: Disabled</span>`;
+                renderer.setClearColor(0x000000, 0); 
+                UI.body.style.backgroundColor = "#0b0f19"; 
+            } else if (State.bgMode === 1) {
+                UI.bgBtn.innerHTML = `<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L28 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span>Chroma Key: Solid Green</span>`;
+                renderer.setClearColor(0x00ff00, 1); 
+                UI.body.style.backgroundColor = "#00ff00";
+            } else {
+                UI.bgBtn.innerHTML = `<svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg><span>Chroma Key: OBS Transparent</span>`;
+                renderer.setClearColor(0x000000, 0); 
+                UI.body.style.backgroundColor = "transparent";
+            }
+        };
+
+        // ==========================================
+        // RECORDING ENGINE
+        // ==========================================
+        UI.recordBtn.onclick = async () => {
+            if (!State.recording) {
+                State.chunks = [];
+                UI.recordBtn.disabled = true;
+                
+                const canvasStream = renderer.domElement.captureStream(30);
+                const tracks = [...canvasStream.getVideoTracks()];
+
+                if (UI.audioToggle.checked) {
+                    try {
+                        State.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        tracks.push(...State.audioStream.getAudioTracks());
+                    } catch (err) {
+                        setStatus('Mic Denied. Video Only.', 'inactive');
+                        UI.audioToggle.checked = false;
+                        setTimeout(() => setStatus('Tracking Active', 'active'), 3000);
+                    }
+                }
+
+                try {
+                    State.mediaRecorder = new MediaRecorder(new MediaStream(tracks), { mimeType: 'video/webm; codecs=vp9' });
+                } catch (e) {
+                    State.mediaRecorder = new MediaRecorder(new MediaStream(tracks));
+                }
+
+                State.mediaRecorder.ondataavailable = e => e.data.size > 0 && State.chunks.push(e.data);
+                State.mediaRecorder.onstop = () => {
+                    const url = URL.createObjectURL(new Blob(State.chunks, { type: 'video/webm' }));
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `AuraVT_${Date.now()}.webm`;
+                    document.body.appendChild(a); a.click(); a.remove();
+                    URL.revokeObjectURL(url);
+                    if (State.audioStream) { State.audioStream.getTracks().forEach(t => t.stop()); State.audioStream = null; }
+                };
+
+                State.mediaRecorder.start();
+                State.recording = true;
+                UI.recordBtn.disabled = false;
+                
+                UI.recordBtn.classList.replace('bg-rose-600', 'bg-slate-700');
+                UI.recordBtn.classList.replace('hover:bg-rose-500', 'hover:bg-slate-600');
+                document.getElementById('recordDot').classList.replace('bg-white', 'bg-rose-500');
+                document.getElementById('recordDot').classList.add('animate-pulse');
+                document.getElementById('recordText').textContent = "Stop";
+                UI.audioToggle.disabled = true;
+
+            } else {
+                State.mediaRecorder.stop();
+                State.recording = false;
+                
+                UI.recordBtn.classList.replace('bg-slate-700', 'bg-rose-600');
+                UI.recordBtn.classList.replace('hover:bg-slate-600', 'hover:bg-rose-500');
+                document.getElementById('recordDot').classList.replace('bg-rose-500', 'bg-white');
+                document.getElementById('recordDot').classList.remove('animate-pulse');
+                document.getElementById('recordText').textContent = "Record";
+                UI.audioToggle.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
+
+
